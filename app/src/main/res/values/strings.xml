@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Сумерки</string>
+    <string name="notification_channel_alarm_name">Будильник на сумерки</string>
+    <string name="notification_channel_alarm_desc">Уведомления о ежедневной проверке сумерек в 00:00 и установке будильника</string>
+    <string name="alarm_default_label">Самые ранние сумерки</string>
+</resources>

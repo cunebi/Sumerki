@@ -1,0 +1,6 @@
+{
+  "name": "Сумерки",
+  "description": "Автоматический будильник на самые ранние сумерки с ежедневной проверкой в 00:00",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
