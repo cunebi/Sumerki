@@ -33,7 +33,7 @@ import java.util.Locale
 
 data class MainUiState(
     val isLoading: Boolean = true,
-    val currentUserId: String = "",
+    val currentUserId: String? = null,
     val currentUserName: String = "",
     val settings: AppSettings = AppSettings(),
     val permissions: PermissionStatus = PermissionStatus(),
@@ -49,11 +49,14 @@ data class MainUiState(
     val countdownToMidnightText: String = "",
     val cloudSynced: Boolean = false,
     val cloudSyncError: String? = null
-)
+) {
+    val isSignedIn: Boolean
+        get() = !currentUserId.isNullOrBlank()
+}
 
 class MainViewModel(
     private val container: AppContainer,
-    private val currentUserId: String,
+    private val currentUserId: String?,
     private val currentUserName: String
 ) : ViewModel() {
 
@@ -78,6 +81,8 @@ class MainViewModel(
 
     private var searchJob: Job? = null
     private var checkJob: Job? = null
+    private var cloudSettingsJob: Job? = null
+    private var cloudChecksJob: Job? = null
     private var cloudHydratedOnce = false
 
     init {
@@ -90,13 +95,23 @@ class MainViewModel(
                 delay(30_000L)
             }
         }
-        observeCloudSettings()
-        observeCloudChecks()
+        if (!currentUserId.isNullOrBlank()) {
+            observeCloudSettings(currentUserId)
+            observeCloudChecks(currentUserId)
+        }
     }
 
-    private fun observeCloudSettings() {
-        viewModelScope.launch {
-            firestoreRepo.observeUserSettings(currentUserId)
+    fun prepareSignOut() {
+        cloudSettingsJob?.cancel()
+        cloudChecksJob?.cancel()
+        cloudSyncedFlow.value = false
+        cloudSyncErrorFlow.value = null
+    }
+
+    private fun observeCloudSettings(uid: String) {
+        cloudSettingsJob?.cancel()
+        cloudSettingsJob = viewModelScope.launch {
+            firestoreRepo.observeUserSettings(uid)
                 .map { cloud -> cloud }
                 .catch { error ->
                     val firestoreError = generateSequence(error) { it.cause }
@@ -122,16 +137,17 @@ class MainViewModel(
                         cloudHydratedOnce = true
                         val local = prefs.getSnapshot()
                         if (local.onboardingCompleted) {
-                            pushSettingsToCloud(local)
+                            pushSettingsToCloud(uid, local)
                         }
                     }
                 }
         }
     }
 
-    private fun observeCloudChecks() {
-        viewModelScope.launch {
-            firestoreRepo.observeChecks(currentUserId)
+    private fun observeCloudChecks(uid: String) {
+        cloudChecksJob?.cancel()
+        cloudChecksJob = viewModelScope.launch {
+            firestoreRepo.observeChecks(uid)
                 .map<List<CloudTwilightCheck>, List<TwilightCheckEntity>> { list ->
                     list.map { it.toLocalEntity() }
                 }
@@ -205,7 +221,11 @@ class MainViewModel(
         val cloudSynced = values[12] as Boolean
         val cloudError = values[13] as String?
 
-        val mergedHistory = if (cloudHistory.isNotEmpty()) cloudHistory else localHistory
+        val mergedHistory = if (!currentUserId.isNullOrBlank() && cloudHistory.isNotEmpty()) {
+            cloudHistory
+        } else {
+            localHistory
+        }
 
         MainUiState(
             isLoading = settings == null,
@@ -252,7 +272,7 @@ class MainViewModel(
                         name = detected.displayName,
                         mode = LocationMode.AUTO
                     )
-                    pushCurrentSnapshotToCloud()
+                    pushCurrentSnapshotToCloudIfSignedIn()
                     onResult(true)
                 } else {
                     locationErrorFlow.value =
@@ -327,7 +347,7 @@ class MainViewModel(
                 name = city.displayTitle,
                 mode = LocationMode.MANUAL
             )
-            pushCurrentSnapshotToCloud()
+            pushCurrentSnapshotToCloudIfSignedIn()
         }
     }
 
@@ -343,14 +363,14 @@ class MainViewModel(
                 name = cleanName,
                 mode = LocationMode.MANUAL
             )
-            pushCurrentSnapshotToCloud()
+            pushCurrentSnapshotToCloudIfSignedIn()
         }
     }
 
     fun setLocationMode(mode: LocationMode) {
         viewModelScope.launch {
             prefs.setLocationMode(mode)
-            pushCurrentSnapshotToCloud()
+            pushCurrentSnapshotToCloudIfSignedIn()
             if (mode == LocationMode.AUTO && PermissionStatusHelper.hasLocationPermission(appContext)) {
                 detectLocationAutomatically()
             }
@@ -360,35 +380,35 @@ class MainViewModel(
     fun updateMaxRetryAttempts(attempts: Int) {
         viewModelScope.launch {
             prefs.setMaxRetryAttempts(attempts)
-            pushCurrentSnapshotToCloud()
+            pushCurrentSnapshotToCloudIfSignedIn()
         }
     }
 
     fun updateRetryDelaySeconds(seconds: Int) {
         viewModelScope.launch {
             prefs.setRetryDelaySeconds(seconds)
-            pushCurrentSnapshotToCloud()
+            pushCurrentSnapshotToCloudIfSignedIn()
         }
     }
 
     fun updateTwilightPreference(preference: TwilightPreference) {
         viewModelScope.launch {
             prefs.setTwilightPreference(preference)
-            pushCurrentSnapshotToCloud()
+            pushCurrentSnapshotToCloudIfSignedIn()
         }
     }
 
     fun updateAlarmOffsetMinutes(minutes: Int) {
         viewModelScope.launch {
             prefs.setAlarmOffsetMinutes(minutes)
-            pushCurrentSnapshotToCloud()
+            pushCurrentSnapshotToCloudIfSignedIn()
         }
     }
 
     fun updateAlarmLabel(label: String) {
         viewModelScope.launch {
             prefs.setAlarmLabel(label)
-            pushCurrentSnapshotToCloud()
+            pushCurrentSnapshotToCloudIfSignedIn()
         }
     }
 
@@ -400,7 +420,7 @@ class MainViewModel(
             } else {
                 MidnightScheduler.cancelDailyMidnightCheck(appContext)
             }
-            pushCurrentSnapshotToCloud()
+            pushCurrentSnapshotToCloudIfSignedIn()
         }
     }
 
@@ -411,7 +431,10 @@ class MainViewModel(
             if (snapshot.dailyMidnightEnabled) {
                 MidnightScheduler.scheduleDailyMidnightCheck(appContext)
             }
-            pushSettingsToCloud(snapshot)
+            val uid = currentUserId
+            if (!uid.isNullOrBlank()) {
+                pushSettingsToCloud(uid, snapshot)
+            }
             if (runInitialCheck) {
                 runManualCheckNow()
             }
@@ -421,23 +444,27 @@ class MainViewModel(
     fun reopenOnboarding() {
         viewModelScope.launch {
             prefs.setOnboardingCompleted(false)
-            pushCurrentSnapshotToCloud()
+            pushCurrentSnapshotToCloudIfSignedIn()
         }
     }
 
     fun syncNowToCloud() {
+        val uid = currentUserId ?: return
+        if (uid.isBlank()) return
         viewModelScope.launch {
-            pushCurrentSnapshotToCloud()
+            pushSettingsToCloud(uid, prefs.getSnapshot())
         }
     }
 
-    private suspend fun pushCurrentSnapshotToCloud() {
-        pushSettingsToCloud(prefs.getSnapshot())
+    private suspend fun pushCurrentSnapshotToCloudIfSignedIn() {
+        val uid = currentUserId ?: return
+        if (uid.isBlank()) return
+        pushSettingsToCloud(uid, prefs.getSnapshot())
     }
 
-    private suspend fun pushSettingsToCloud(settings: AppSettings) {
+    private suspend fun pushSettingsToCloud(uid: String, settings: AppSettings) {
         val result = firestoreRepo.saveSettings(
-            userId = currentUserId,
+            userId = uid,
             settings = settings,
             displayName = currentUserName
         )
@@ -495,9 +522,12 @@ class MainViewModel(
     fun clearHistory() {
         viewModelScope.launch {
             checkDao.clearAll()
-            val result = firestoreRepo.clearCheckLogs(currentUserId)
-            result.onFailure { err ->
-                cloudSyncErrorFlow.value = err.localizedMessage ?: "Не удалось очистить журнал в облаке"
+            val uid = currentUserId
+            if (!uid.isNullOrBlank()) {
+                val result = firestoreRepo.clearCheckLogs(uid)
+                result.onFailure { err ->
+                    cloudSyncErrorFlow.value = err.localizedMessage ?: "Не удалось очистить журнал в облаке"
+                }
             }
         }
     }

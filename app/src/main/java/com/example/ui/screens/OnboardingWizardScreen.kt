@@ -38,10 +38,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Alarm
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.LocationSearching
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.NightlightRound
@@ -100,6 +102,9 @@ import kotlin.math.roundToInt
 @Composable
 fun OnboardingWizardScreen(
     uiState: MainUiState,
+    isSigningInGoogle: Boolean,
+    googleAuthError: String?,
+    onGoogleSignInClick: () -> Unit,
     onRefreshPermissions: () -> Unit,
     onAutoDetectLocation: () -> Unit,
     onSearchCities: (String) -> Unit,
@@ -230,7 +235,13 @@ fun OnboardingWizardScreen(
                         label = "wizard_step"
                     ) { step ->
                         when (step) {
-                            0 -> WizardWelcomeStep()
+                            0 -> WizardWelcomeStep(
+                                isSignedIn = uiState.isSignedIn,
+                                userName = uiState.currentUserName,
+                                isSigningIn = isSigningInGoogle,
+                                authError = googleAuthError,
+                                onGoogleSignInClick = onGoogleSignInClick
+                            )
                             1 -> WizardPermissionsStep(
                                 uiState = uiState,
                                 onRequestAllBasic = {
@@ -409,7 +420,13 @@ fun OnboardingWizardScreen(
 }
 
 @Composable
-private fun WizardWelcomeStep() {
+private fun WizardWelcomeStep(
+    isSignedIn: Boolean,
+    userName: String,
+    isSigningIn: Boolean,
+    authError: String?,
+    onGoogleSignInClick: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -479,6 +496,77 @@ private fun WizardWelcomeStep() {
             title = "Интеграция с приложением «Часы»",
             subtitle = "Когда время определено, будильник автоматически добавляется в системные «Часы» на вашем устройстве."
         )
+
+        // Optional Cloud Sync card
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = if (isSignedIn) AuroraGreenContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+            border = BorderStroke(
+                1.dp,
+                if (isSignedIn) AuroraGreen.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+            )
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (isSignedIn) Icons.Rounded.CloudDone else Icons.Rounded.AccountCircle,
+                        contentDescription = null,
+                        tint = if (isSignedIn) AuroraGreen else MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isSignedIn) {
+                            "Облако подключено: ${userName.ifBlank { "Google" }}"
+                        } else {
+                            "Облачное сохранение (необязательно)"
+                        },
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = if (isSignedIn) {
+                        "Настройки и журнал проверок будут сохраняться в Firebase Cloud Firestore."
+                    } else {
+                        "Войдите в Google, чтобы сохранять настройки и историю в облаке. Без входа всё работает локально на устройстве."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (!authError.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = authError,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+                if (!isSignedIn) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onGoogleSignInClick,
+                        enabled = !isSigningIn,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("wizard_optional_google_signin")
+                    ) {
+                        if (isSigningIn) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Вход через Google…")
+                        } else {
+                            Icon(Icons.Rounded.AccountCircle, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Войти через Google")
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

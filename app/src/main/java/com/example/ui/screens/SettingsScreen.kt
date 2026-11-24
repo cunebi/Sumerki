@@ -70,6 +70,9 @@ fun SettingsScreen(
     onSetLocationMode: (LocationMode) -> Unit,
     onOpenLocationPicker: () -> Unit,
     onReopenOnboarding: () -> Unit,
+    isSigningInGoogle: Boolean,
+    googleAuthError: String?,
+    onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier
@@ -108,45 +111,80 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.headlineSmall
             )
 
-            // 0. Firebase Account & Sync
-            SettingsSectionCard(title = "Аккаунт и облако Firebase") {
-                Text(
-                    text = uiState.currentUserName.ifBlank { "Пользователь Google" },
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = when {
-                        uiState.cloudSyncError != null -> "Ошибка синхронизации: ${uiState.cloudSyncError}"
-                        uiState.cloudSynced -> "Настройки и журнал синхронизированы с Cloud Firestore"
-                        else -> "Подключение к Cloud Firestore…"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (uiState.cloudSyncError != null) {
-                        MaterialTheme.colorScheme.tertiary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+            // 0. Firebase Account & Sync (Optional)
+            SettingsSectionCard(title = "Аккаунт Google и облако") {
+                if (uiState.isSignedIn) {
+                    Text(
+                        text = uiState.currentUserName.ifBlank { "Пользователь Google" },
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = when {
+                            uiState.cloudSyncError != null -> "Ошибка синхронизации: ${uiState.cloudSyncError}"
+                            uiState.cloudSynced -> "Настройки и журнал сохраняются в Cloud Firestore"
+                            else -> "Подключение к Cloud Firestore…"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (uiState.cloudSyncError != null) {
+                            MaterialTheme.colorScheme.tertiary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = onSyncNow,
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("settings_cloud_sync_btn")
+                        ) {
+                            Text("Синхронизировать")
+                        }
+                        OutlinedButton(
+                            onClick = onSignOut,
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("settings_sign_out_btn")
+                        ) {
+                            Text("Выйти")
+                        }
                     }
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = onSyncNow,
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 48.dp)
-                            .testTag("settings_cloud_sync_btn")
-                    ) {
-                        Text("Синхронизировать")
+                } else {
+                    Text(
+                        text = "Локальный режим (без входа)",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Вход в Google необязателен. Пока вы не вошли, настройки и история проверок сохраняются только на этом устройстве и не отправляются в облако.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (!googleAuthError.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = googleAuthError,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
                     }
-                    OutlinedButton(
-                        onClick = onSignOut,
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = onGoogleSignIn,
+                        enabled = !isSigningInGoogle,
                         modifier = Modifier
-                            .weight(1f)
+                            .fillMaxWidth()
                             .heightIn(min = 48.dp)
-                            .testTag("settings_sign_out_btn")
+                            .testTag("settings_google_signin_btn")
                     ) {
-                        Text("Выйти")
+                        Text(
+                            if (isSigningInGoogle) "Выполняется вход…"
+                            else "Войти через Google для облака"
+                        )
                     }
                 }
             }

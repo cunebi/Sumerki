@@ -58,9 +58,9 @@ import com.example.ui.MainUiState
 import com.example.ui.MainViewModel
 import com.example.ui.auth.attemptAutoSignIn
 import com.example.ui.auth.authStateFlow
+import com.example.ui.auth.onGoogleSignInClicked
 import com.example.ui.auth.signOutFromGoogle
 import com.example.ui.components.LocationPickerSheet
-import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.OnboardingWizardScreen
@@ -100,68 +100,76 @@ private fun AppContent() {
 
     val auth = remember { Firebase.auth }
     val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
-    var checkingAutoSignIn by remember { mutableStateOf(auth.currentUser == null) }
 
+    var isSigningInGoogle by remember { mutableStateOf(false) }
+    var googleAuthError by remember { mutableStateOf<String?>(null) }
+
+    // Silent sign-in attempt on startup if user previously authorized Google on this device;
+    // does NOT block UI if unauthenticated.
     LaunchedEffect(Unit) {
         if (auth.currentUser == null) {
             attemptAutoSignIn(
                 context = context,
                 credentialManager = credentialManager,
-                onAuthSuccess = { checkingAutoSignIn = false },
-                onUnauthenticated = { checkingAutoSignIn = false },
+                onAuthSuccess = {},
+                onUnauthenticated = {},
                 scope = scope
             )
-        } else {
-            checkingAutoSignIn = false
         }
     }
 
-    val user = currentUser
-    if (checkingAutoSignIn && user == null) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            CircularProgressIndicator()
-        }
-    } else if (user == null) {
-        AuthScreen(
-            onAuthSuccess = { checkingAutoSignIn = false }
-        )
-    } else {
-        val uid = user.uid
-        val displayName = user.displayName ?: user.email ?: "Пользователь Google"
-        key(uid) {
-            val viewModel: MainViewModel = viewModel(
-                key = uid,
-                factory = viewModelFactory {
-                    initializer {
-                        val app = checkNotNull(this[APPLICATION_KEY]) as TwilightApp
-                        MainViewModel(
-                            container = app.container,
-                            currentUserId = uid,
-                            currentUserName = displayName
-                        )
-                    }
-                }
-            )
-            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val uid = currentUser?.uid
+    val displayName = currentUser?.displayName ?: currentUser?.email ?: ""
+    val scopeKey = uid ?: "local_guest"
 
-            LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-                viewModel.refreshPermissions()
-            }
-
-            TwilightRootContent(
-                uiState = uiState,
-                viewModel = viewModel,
-                onSignOut = {
-                    signOutFromGoogle(
-                        credentialManager = credentialManager,
-                        scope = scope
+    key(scopeKey) {
+        val viewModel: MainViewModel = viewModel(
+            key = scopeKey,
+            factory = viewModelFactory {
+                initializer {
+                    val app = checkNotNull(this[APPLICATION_KEY]) as TwilightApp
+                    MainViewModel(
+                        container = app.container,
+                        currentUserId = uid,
+                        currentUserName = displayName
                     )
                 }
-            )
+            }
+        )
+        val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+        LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+            viewModel.refreshPermissions()
         }
+
+        TwilightRootContent(
+            uiState = uiState,
+            viewModel = viewModel,
+            isSigningInGoogle = isSigningInGoogle,
+            googleAuthError = googleAuthError,
+            onGoogleSignIn = {
+                googleAuthError = null
+                isSigningInGoogle = true
+                onGoogleSignInClicked(
+                    context = context,
+                    credentialManager = credentialManager,
+                    onAuthSuccess = { isSigningInGoogle = false },
+                    onAuthError = { msg ->
+                        isSigningInGoogle = false
+                        googleAuthError = msg
+                    },
+                    scope = scope,
+                    onAuthCancelled = { isSigningInGoogle = false }
+                )
+            },
+            onSignOut = {
+                viewModel.prepareSignOut()
+                signOutFromGoogle(
+                    credentialManager = credentialManager,
+                    scope = scope
+                )
+            }
+        )
     }
 }
 
@@ -169,6 +177,9 @@ private fun AppContent() {
 private fun TwilightRootContent(
     uiState: MainUiState,
     viewModel: MainViewModel,
+    isSigningInGoogle: Boolean,
+    googleAuthError: String?,
+    onGoogleSignIn: () -> Unit,
     onSignOut: () -> Unit
 ) {
     if (uiState.isLoading) {
@@ -184,6 +195,9 @@ private fun TwilightRootContent(
     if (!uiState.settings.onboardingCompleted) {
         OnboardingWizardScreen(
             uiState = uiState,
+            isSigningInGoogle = isSigningInGoogle,
+            googleAuthError = googleAuthError,
+            onGoogleSignInClick = onGoogleSignIn,
             onRefreshPermissions = viewModel::refreshPermissions,
             onAutoDetectLocation = { viewModel.detectLocationAutomatically() },
             onSearchCities = viewModel::searchCities,
@@ -290,6 +304,9 @@ private fun TwilightRootContent(
                             onSetLocationMode = viewModel::setLocationMode,
                             onOpenLocationPicker = { showLocationSheet = true },
                             onReopenOnboarding = viewModel::reopenOnboarding,
+                            isSigningInGoogle = isSigningInGoogle,
+                            googleAuthError = googleAuthError,
+                            onGoogleSignIn = onGoogleSignIn,
                             onSyncNow = viewModel::syncNowToCloud,
                             onSignOut = onSignOut
                         )
