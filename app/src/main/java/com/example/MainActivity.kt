@@ -301,6 +301,7 @@ private fun TwilightRootContent(
                             onSetTwilightPreference = viewModel::updateTwilightPreference,
                             onSetAlarmOffsetMinutes = viewModel::updateAlarmOffsetMinutes,
                             onSetAlarmLabel = viewModel::updateAlarmLabel,
+                            onSetReplaceOldAlarm = viewModel::updateReplaceOldAlarm,
                             onSetLocationMode = viewModel::setLocationMode,
                             onOpenLocationPicker = { showLocationSheet = true },
                             onReopenOnboarding = viewModel::reopenOnboarding,

@@ -30,6 +30,10 @@ class UserPreferencesRepository(private val context: Context) {
         val TWILIGHT_PREFERENCE = stringPreferencesKey("twilight_preference")
         val ALARM_OFFSET_MINUTES = intPreferencesKey("alarm_offset_minutes")
         val ALARM_LABEL = stringPreferencesKey("alarm_label")
+        val REPLACE_OLD_ALARM = booleanPreferencesKey("replace_old_alarm")
+        val LAST_ALARM_HOUR = intPreferencesKey("last_alarm_hour")
+        val LAST_ALARM_MINUTE = intPreferencesKey("last_alarm_minute")
+        val LAST_ALARM_LABEL = stringPreferencesKey("last_alarm_label")
         val LOCATION_MODE = stringPreferencesKey("location_mode")
         val LATITUDE = doublePreferencesKey("latitude")
         val LONGITUDE = doublePreferencesKey("longitude")
@@ -49,6 +53,10 @@ class UserPreferencesRepository(private val context: Context) {
             alarmOffsetMinutes = (prefs[Keys.ALARM_OFFSET_MINUTES] ?: 0).coerceIn(-30, 30),
             alarmLabel = prefs[Keys.ALARM_LABEL]?.takeIf { it.isNotBlank() }
                 ?: "Самые ранние сумерки",
+            replaceOldAlarm = prefs[Keys.REPLACE_OLD_ALARM] ?: true,
+            lastAlarmHour = prefs[Keys.LAST_ALARM_HOUR],
+            lastAlarmMinute = prefs[Keys.LAST_ALARM_MINUTE],
+            lastAlarmLabel = prefs[Keys.LAST_ALARM_LABEL],
             locationMode = prefs[Keys.LOCATION_MODE]?.let { name ->
                 LocationMode.entries.find { it.name == name }
             } ?: LocationMode.AUTO,
@@ -94,6 +102,20 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun setAlarmLabel(label: String) {
         context.settingsDataStore.edit {
             it[Keys.ALARM_LABEL] = label.trim().ifEmpty { "Самые ранние сумерки" }
+        }
+    }
+
+    suspend fun setReplaceOldAlarm(enabled: Boolean) {
+        context.settingsDataStore.edit {
+            it[Keys.REPLACE_OLD_ALARM] = enabled
+        }
+    }
+
+    suspend fun saveLastCreatedAlarm(hour: Int, minute: Int, label: String) {
+        context.settingsDataStore.edit {
+            it[Keys.LAST_ALARM_HOUR] = hour.coerceIn(0, 23)
+            it[Keys.LAST_ALARM_MINUTE] = minute.coerceIn(0, 59)
+            it[Keys.LAST_ALARM_LABEL] = label.trim().ifEmpty { "Самые ранние сумерки" }
         }
     }
 

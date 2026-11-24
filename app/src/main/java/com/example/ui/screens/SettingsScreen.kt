@@ -67,6 +67,7 @@ fun SettingsScreen(
     onSetTwilightPreference: (TwilightPreference) -> Unit,
     onSetAlarmOffsetMinutes: (Int) -> Unit,
     onSetAlarmLabel: (String) -> Unit,
+    onSetReplaceOldAlarm: (Boolean) -> Unit,
     onSetLocationMode: (LocationMode) -> Unit,
     onOpenLocationPicker: () -> Unit,
     onReopenOnboarding: () -> Unit,
@@ -424,6 +425,31 @@ fun SettingsScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Снимать старый будильник при новом",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Отключает предыдущий будильник, созданный этим приложением, перед установкой нового времени (Android позволяет отключить будильник в «Часах»).",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Switch(
+                        checked = settings.replaceOldAlarm,
+                        onCheckedChange = onSetReplaceOldAlarm,
+                        modifier = Modifier.testTag("settings_replace_old_alarm_switch")
+                    )
+                }
             }
 
             // 5. Permissions Hub & Wizard Re-launch

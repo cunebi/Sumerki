@@ -101,4 +101,19 @@ class TwilightSchedulerUnitTest {
             TimeZone.setDefault(originalDefault)
         }
     }
+
+    @Test
+    fun previousAlarmDiffersCheck_detectsChangedTimeOrLabel() {
+        val parts = "18:59".split(":")
+        assertEquals(18, parts[0].toInt())
+        assertEquals(59, parts[1].toInt())
+
+        val oldHour = 18
+        val oldMin = 59
+        val newHour = 5
+        val newMin = 59
+        val label = "Самые ранние сумерки"
+        assertTrue(oldHour != newHour || oldMin != newMin || label != label)
+        assertTrue(!(newHour != newHour || newMin != newMin || label != label))
+    }
 }

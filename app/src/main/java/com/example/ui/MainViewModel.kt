@@ -433,6 +433,12 @@ class MainViewModel(
         }
     }
 
+    fun updateReplaceOldAlarm(enabled: Boolean) {
+        viewModelScope.launch {
+            prefs.setReplaceOldAlarm(enabled)
+        }
+    }
+
     fun updateDailyMidnightEnabled(enabled: Boolean) {
         viewModelScope.launch {
             prefs.setDailyMidnightEnabled(enabled)

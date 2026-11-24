@@ -14,6 +14,9 @@ interface TwilightCheckDao {
     @Query("SELECT * FROM twilight_checks ORDER BY timestampMillis DESC LIMIT 1")
     fun observeLatestCheck(): Flow<TwilightCheckEntity?>
 
+    @Query("SELECT * FROM twilight_checks WHERE alarmSet = 1 ORDER BY timestampMillis DESC LIMIT 1")
+    suspend fun getLatestSetAlarmCheck(): TwilightCheckEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCheck(entity: TwilightCheckEntity)
 

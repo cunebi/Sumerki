@@ -26,6 +26,45 @@ object ClockAlarmHelper {
         }
     }
 
+    fun buildDismissAlarmIntent(
+        hour: Int,
+        minute: Int,
+        label: String? = null
+    ): Intent {
+        val normalizedHour = hour.coerceIn(0, 23)
+        val normalizedMinute = minute.coerceIn(0, 59)
+        return Intent(AlarmClock.ACTION_DISMISS_ALARM).apply {
+            putExtra(AlarmClock.EXTRA_ALARM_SEARCH_MODE, AlarmClock.ALARM_SEARCH_MODE_TIME)
+            putExtra(AlarmClock.EXTRA_HOUR, normalizedHour)
+            putExtra(AlarmClock.EXTRA_MINUTES, normalizedMinute)
+            putExtra(AlarmClock.EXTRA_IS_PM, normalizedHour >= 12)
+            if (!label.isNullOrBlank()) {
+                putExtra(AlarmClock.EXTRA_MESSAGE, label)
+            }
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    }
+
+    fun dismissAlarmInClockApp(
+        context: Context,
+        hour: Int,
+        minute: Int,
+        label: String? = null
+    ): Boolean {
+        val intent = buildDismissAlarmIntent(hour, minute, label)
+        if (intent.resolveActivity(context.packageManager) == null) {
+            return false
+        }
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (_: SecurityException) {
+            false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun setAlarmInClockApp(
         context: Context,
         hour: Int,

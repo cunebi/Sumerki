@@ -214,6 +214,37 @@ class TwilightCheckEngine(
                         targetTimeZone = targetTz
                     )
                     if (parsed != null) {
+                        val previousAlarm = resolvePreviousAppAlarm(
+                            settingsHour = settings.lastAlarmHour,
+                            settingsMinute = settings.lastAlarmMinute,
+                            settingsLabel = settings.lastAlarmLabel,
+                            defaultLabel = settings.alarmLabel
+                        )
+                        var dismissedOldAlarmTime: String? = null
+                        if (settings.replaceOldAlarm && previousAlarm != null) {
+                            val (oldHour, oldMinute, oldLabel) = previousAlarm
+                            val differs = oldHour != parsed.selectedHour ||
+                                oldMinute != parsed.selectedMinute ||
+                                oldLabel != settings.alarmLabel
+                            if (differs) {
+                                val dismissed = ClockAlarmHelper.dismissAlarmInClockApp(
+                                    context = context,
+                                    hour = oldHour,
+                                    minute = oldMinute,
+                                    label = oldLabel
+                                )
+                                if (dismissed) {
+                                    dismissedOldAlarmTime = String.format(
+                                        Locale.getDefault(),
+                                        "%02d:%02d",
+                                        oldHour,
+                                        oldMinute
+                                    )
+                                    delay(300L)
+                                }
+                            }
+                        }
+
                         val clockResult = ClockAlarmHelper.setAlarmInClockApp(
                             context = context,
                             hour = parsed.selectedHour,
@@ -221,8 +252,19 @@ class TwilightCheckEngine(
                             label = settings.alarmLabel
                         )
 
+                        if (clockResult.intentDispatched) {
+                            preferencesRepository.saveLastCreatedAlarm(
+                                hour = parsed.selectedHour,
+                                minute = parsed.selectedMinute,
+                                label = settings.alarmLabel
+                            )
+                        }
+
                         val summaryMsg = buildString {
                             append("Найдены ${parsed.selectedStageLabel.lowercase()} в ${parsed.selectedTimeLocal}. ")
+                            if (dismissedOldAlarmTime != null) {
+                                append("Предыдущий будильник ($dismissedOldAlarmTime) отключён. ")
+                            }
                             append(clockResult.message)
                         }
 
@@ -402,5 +444,33 @@ class TwilightCheckEngine(
             timeZone = targetTimeZone
         }
         return formatter.format(date)
+    }
+
+    private suspend fun resolvePreviousAppAlarm(
+        settingsHour: Int?,
+        settingsMinute: Int?,
+        settingsLabel: String?,
+        defaultLabel: String
+    ): Triple<Int, Int, String>? {
+        if (settingsHour != null && settingsMinute != null) {
+            return Triple(
+                settingsHour.coerceIn(0, 23),
+                settingsMinute.coerceIn(0, 59),
+                settingsLabel?.takeIf { it.isNotBlank() } ?: defaultLabel
+            )
+        }
+        val latestSet = checkDao.getLatestSetAlarmCheck() ?: return null
+        val (h, m) = parseHourMinute(latestSet.twilightTime) ?: return null
+        return Triple(h, m, defaultLabel)
+    }
+
+    internal fun parseHourMinute(hhmm: String?): Pair<Int, Int>? {
+        if (hhmm.isNullOrBlank()) return null
+        val parts = hhmm.trim().split(":")
+        if (parts.size != 2) return null
+        val h = parts[0].toIntOrNull() ?: return null
+        val m = parts[1].toIntOrNull() ?: return null
+        if (h !in 0..23 || m !in 0..59) return null
+        return h to m
     }
 }
