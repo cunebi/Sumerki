@@ -6,6 +6,7 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.UserPreferencesRepository
 import com.example.data.remote.FirestoreSyncRepository
 import com.example.data.remote.GeocodingApiService
+import com.example.data.remote.TimezoneApiService
 import com.example.data.remote.TwilightApiService
 import com.example.domain.TwilightCheckEngine
 import com.example.scheduler.MidnightScheduler
@@ -60,13 +61,21 @@ class AppContainer(context: Context) {
         .build()
         .create(GeocodingApiService::class.java)
 
+    val timezoneApiService: TimezoneApiService = Retrofit.Builder()
+        .baseUrl("https://api.open-meteo.com/")
+        .client(okHttpClient)
+        .addConverterFactory(MoshiConverterFactory.create(moshi))
+        .build()
+        .create(TimezoneApiService::class.java)
+
     val twilightCheckEngine = TwilightCheckEngine(
         context = appContext,
         preferencesRepository = preferencesRepository,
         checkDao = checkDao,
         twilightApi = twilightApiService,
         locationHelper = locationHelper,
-        firestoreSyncRepository = firestoreSyncRepository
+        firestoreSyncRepository = firestoreSyncRepository,
+        timezoneApi = timezoneApiService
     )
 }
 

@@ -43,7 +43,8 @@ data class AppSettings(
     val locationMode: LocationMode = LocationMode.AUTO,
     val latitude: Double? = null,
     val longitude: Double? = null,
-    val locationName: String = ""
+    val locationName: String = "",
+    val locationTimezoneId: String? = null
 ) {
     val hasLocation: Boolean
         get() = latitude != null && longitude != null
@@ -66,7 +67,8 @@ data class CityOption(
     val country: String,
     val region: String?,
     val latitude: Double,
-    val longitude: Double
+    val longitude: Double,
+    val timezoneId: String? = null
 ) {
     val displayTitle: String
         get() = buildString {

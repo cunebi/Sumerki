@@ -26,6 +26,7 @@ interface TwilightApiService {
         @Query("lat") latitude: Double,
         @Query("lng") longitude: Double,
         @Query("date") dateIso: String,
-        @Query("formatted") formatted: Int = 0
+        @Query("formatted") formatted: Int = 0,
+        @Query("tzid") tzid: String? = null
     ): SunriseSunsetResponse
 }

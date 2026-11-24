@@ -7,8 +7,10 @@ import com.example.data.local.UserPreferencesRepository
 import com.example.data.model.LocationMode
 import com.example.data.model.TwilightPreference
 import com.example.data.model.TwilightTimes
+import com.example.data.remote.CuratedCities
 import com.example.data.remote.FirestoreSyncRepository
 import com.example.data.remote.SunriseSunsetResults
+import com.example.data.remote.TimezoneApiService
 import com.example.data.remote.TwilightApiService
 import com.example.system.ClockAlarmHelper
 import com.example.system.LocationHelper
@@ -45,7 +47,8 @@ class TwilightCheckEngine(
     private val checkDao: TwilightCheckDao,
     private val twilightApi: TwilightApiService,
     private val locationHelper: LocationHelper,
-    private val firestoreSyncRepository: FirestoreSyncRepository? = null
+    private val firestoreSyncRepository: FirestoreSyncRepository? = null,
+    private val timezoneApi: TimezoneApiService? = null
 ) {
 
     private suspend fun persistCheck(entity: TwilightCheckEntity) {
@@ -53,6 +56,42 @@ class TwilightCheckEngine(
         val uid = Firebase.auth.currentUser?.uid
         if (!uid.isNullOrBlank()) {
             firestoreSyncRepository?.addCheckLog(uid, entity)
+        }
+    }
+
+    private suspend fun resolveTimezoneId(
+        latitude: Double,
+        longitude: Double,
+        cachedTimezoneId: String?
+    ): String? {
+        if (!cachedTimezoneId.isNullOrBlank() && isValidTimeZoneId(cachedTimezoneId)) {
+            return cachedTimezoneId
+        }
+        CuratedCities.findTimezoneForCoordinates(latitude, longitude)?.let { presetTz ->
+            if (isValidTimeZoneId(presetTz)) return presetTz
+        }
+        return try {
+            timezoneApi?.getTimezoneForCoordinates(latitude, longitude)
+                ?.timezone
+                ?.takeIf { isValidTimeZoneId(it) }
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun isValidTimeZoneId(id: String): Boolean {
+        if (id.isBlank()) return false
+        val tz = TimeZone.getTimeZone(id)
+        return tz.id != "GMT" || id.equals("GMT", ignoreCase = true) || id.equals("UTC", ignoreCase = true)
+    }
+
+    private fun resolveTargetTimeZone(timezoneId: String?): TimeZone {
+        return if (!timezoneId.isNullOrBlank() && isValidTimeZoneId(timezoneId)) {
+            TimeZone.getTimeZone(timezoneId)
+        } else {
+            TimeZone.getDefault()
         }
     }
 
@@ -64,16 +103,11 @@ class TwilightCheckEngine(
         val maxAttempts = settings.maxRetryAttempts.coerceIn(1, 30)
         val delayMs = (settings.retryDelaySeconds.coerceIn(1, 30)) * 1000L
 
-        val todayCal = Calendar.getInstance()
-        val apiDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-        val displayDateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
-        val todayIso = apiDateFormat.format(todayCal.time)
-        val todayDisplay = displayDateFormat.format(todayCal.time)
-
         // Step 1: Resolve location
         var lat = settings.latitude
         var lon = settings.longitude
         var locName = settings.locationName
+        var locationTimezoneId = settings.locationTimezoneId
 
         if (settings.locationMode == LocationMode.AUTO) {
             onProgress(0, maxAttempts, "Определяем местоположение…")
@@ -82,11 +116,19 @@ class TwilightCheckEngine(
                 lat = detected.latitude
                 lon = detected.longitude
                 locName = detected.displayName
-                preferencesRepository.saveLocation(lat, lon, locName, LocationMode.AUTO)
+                locationTimezoneId = resolveTimezoneId(lat, lon, cachedTimezoneId = null)
+                preferencesRepository.saveLocation(
+                    latitude = lat,
+                    longitude = lon,
+                    name = locName,
+                    mode = LocationMode.AUTO,
+                    timezoneId = locationTimezoneId
+                )
             }
         }
 
         if (lat == null || lon == null) {
+            val todayDisplay = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(Date())
             val reason = if (settings.locationMode == LocationMode.AUTO) {
                 "Не удалось определить геопозицию автоматически. Выберите город вручную."
             } else {
@@ -115,6 +157,22 @@ class TwilightCheckEngine(
             return CheckOutcome.Failure(0, maxAttempts, reason)
         }
 
+        val resolvedTimezoneId = resolveTimezoneId(lat, lon, locationTimezoneId)
+        if (!resolvedTimezoneId.isNullOrBlank() && resolvedTimezoneId != settings.locationTimezoneId) {
+            preferencesRepository.setLocationTimezoneId(resolvedTimezoneId)
+        }
+        val targetTz = resolveTargetTimeZone(resolvedTimezoneId)
+
+        val todayCal = Calendar.getInstance(targetTz)
+        val apiDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            timeZone = targetTz
+        }
+        val displayDateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).apply {
+            timeZone = targetTz
+        }
+        val todayIso = apiDateFormat.format(todayCal.time)
+        val todayDisplay = displayDateFormat.format(todayCal.time)
+
         val resolvedLocName = locName.ifBlank {
             String.format(Locale.US, "%.4f°, %.4f°", lat, lon)
         }
@@ -130,19 +188,30 @@ class TwilightCheckEngine(
             )
 
             try {
-                val response = twilightApi.getTwilightForDate(
+                var response = twilightApi.getTwilightForDate(
                     latitude = lat,
                     longitude = lon,
                     dateIso = todayIso,
-                    formatted = 0
+                    formatted = 0,
+                    tzid = resolvedTimezoneId
                 )
+                if (!response.status.equals("OK", ignoreCase = true) && !resolvedTimezoneId.isNullOrBlank()) {
+                    response = twilightApi.getTwilightForDate(
+                        latitude = lat,
+                        longitude = lon,
+                        dateIso = todayIso,
+                        formatted = 0,
+                        tzid = null
+                    )
+                }
 
                 if (response.status.equals("OK", ignoreCase = true) && response.results != null) {
                     val parsed = parseTwilightResults(
                         results = response.results,
                         dateLabel = todayDisplay,
                         preference = settings.twilightPreference,
-                        offsetMinutes = settings.alarmOffsetMinutes
+                        offsetMinutes = settings.alarmOffsetMinutes,
+                        targetTimeZone = targetTz
                     )
                     if (parsed != null) {
                         val clockResult = ClockAlarmHelper.setAlarmInClockApp(
@@ -259,7 +328,8 @@ class TwilightCheckEngine(
         results: SunriseSunsetResults,
         dateLabel: String,
         preference: TwilightPreference,
-        offsetMinutes: Int
+        offsetMinutes: Int,
+        targetTimeZone: TimeZone = TimeZone.getDefault()
     ): TwilightTimes? {
         val astroDate = parseIsoUtc(results.astronomicalTwilightBegin)
         val nautDate = parseIsoUtc(results.nauticalTwilightBegin)
@@ -278,7 +348,7 @@ class TwilightCheckEngine(
             TwilightPreference.CIVIL -> civilDate?.let { it to "Гражданские сумерки" }
         } ?: return null
 
-        val alarmCal = Calendar.getInstance().apply {
+        val alarmCal = Calendar.getInstance(targetTimeZone).apply {
             time = chosenPair.first
             if (offsetMinutes != 0) {
                 add(Calendar.MINUTE, offsetMinutes)
@@ -287,14 +357,14 @@ class TwilightCheckEngine(
 
         val hour = alarmCal.get(Calendar.HOUR_OF_DAY)
         val minute = alarmCal.get(Calendar.MINUTE)
-        val selectedFormatted = formatLocalTime(alarmCal.time)
+        val selectedFormatted = formatLocalTime(alarmCal.time, targetTimeZone)
 
         return TwilightTimes(
             dateLabel = dateLabel,
-            astronomicalBeginLocal = astroDate?.let(::formatLocalTime),
-            nauticalBeginLocal = nautDate?.let(::formatLocalTime),
-            civilBeginLocal = civilDate?.let(::formatLocalTime),
-            sunriseLocal = sunriseDate?.let(::formatLocalTime),
+            astronomicalBeginLocal = astroDate?.let { formatLocalTime(it, targetTimeZone) },
+            nauticalBeginLocal = nautDate?.let { formatLocalTime(it, targetTimeZone) },
+            civilBeginLocal = civilDate?.let { formatLocalTime(it, targetTimeZone) },
+            sunriseLocal = sunriseDate?.let { formatLocalTime(it, targetTimeZone) },
             selectedTimeLocal = selectedFormatted,
             selectedHour = hour,
             selectedMinute = minute,
@@ -327,9 +397,9 @@ class TwilightCheckEngine(
         }
     }
 
-    private fun formatLocalTime(date: Date): String {
+    private fun formatLocalTime(date: Date, targetTimeZone: TimeZone): String {
         val formatter = SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
-            timeZone = TimeZone.getDefault()
+            timeZone = targetTimeZone
         }
         return formatter.format(date)
     }

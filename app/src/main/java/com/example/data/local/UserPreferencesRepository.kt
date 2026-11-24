@@ -34,6 +34,7 @@ class UserPreferencesRepository(private val context: Context) {
         val LATITUDE = doublePreferencesKey("latitude")
         val LONGITUDE = doublePreferencesKey("longitude")
         val LOCATION_NAME = stringPreferencesKey("location_name")
+        val LOCATION_TIMEZONE_ID = stringPreferencesKey("location_timezone_id")
     }
 
     val settingsFlow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
@@ -53,7 +54,8 @@ class UserPreferencesRepository(private val context: Context) {
             } ?: LocationMode.AUTO,
             latitude = prefs[Keys.LATITUDE],
             longitude = prefs[Keys.LONGITUDE],
-            locationName = prefs[Keys.LOCATION_NAME] ?: ""
+            locationName = prefs[Keys.LOCATION_NAME] ?: "",
+            locationTimezoneId = prefs[Keys.LOCATION_TIMEZONE_ID]
         )
     }
 
@@ -103,13 +105,26 @@ class UserPreferencesRepository(private val context: Context) {
         latitude: Double,
         longitude: Double,
         name: String,
-        mode: LocationMode
+        mode: LocationMode,
+        timezoneId: String? = null
     ) {
         context.settingsDataStore.edit {
             it[Keys.LATITUDE] = latitude
             it[Keys.LONGITUDE] = longitude
             it[Keys.LOCATION_NAME] = name
             it[Keys.LOCATION_MODE] = mode.name
+            if (!timezoneId.isNullOrBlank()) {
+                it[Keys.LOCATION_TIMEZONE_ID] = timezoneId
+            } else {
+                it.remove(Keys.LOCATION_TIMEZONE_ID)
+            }
+        }
+    }
+
+    suspend fun setLocationTimezoneId(timezoneId: String) {
+        if (timezoneId.isBlank()) return
+        context.settingsDataStore.edit {
+            it[Keys.LOCATION_TIMEZONE_ID] = timezoneId
         }
     }
 }

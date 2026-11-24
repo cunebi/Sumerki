@@ -259,6 +259,14 @@ fun DashboardScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color.White.copy(alpha = 0.86f)
                         )
+                        if (!settings.locationTimezoneId.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Местное время выбранного города: ${settings.locationTimezoneId}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White.copy(alpha = 0.72f)
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(18.dp))
 

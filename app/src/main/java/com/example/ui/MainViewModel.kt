@@ -177,7 +177,8 @@ class MainViewModel(
         prefs.setAlarmOffsetMinutes(remote.alarmOffsetMinutes)
         prefs.setAlarmLabel(remote.alarmLabel)
         if (remote.latitude != null && remote.longitude != null) {
-            prefs.saveLocation(remote.latitude, remote.longitude, remote.locationName, remote.locationMode)
+            val tzId = resolveTimezoneForCoords(remote.latitude, remote.longitude)
+            prefs.saveLocation(remote.latitude, remote.longitude, remote.locationName, remote.locationMode, tzId)
         } else {
             prefs.setLocationMode(remote.locationMode)
         }
@@ -266,11 +267,13 @@ class MainViewModel(
             try {
                 val detected = container.locationHelper.detectCurrentLocation()
                 if (detected != null) {
+                    val tzId = resolveTimezoneForCoords(detected.latitude, detected.longitude)
                     prefs.saveLocation(
                         latitude = detected.latitude,
                         longitude = detected.longitude,
                         name = detected.displayName,
-                        mode = LocationMode.AUTO
+                        mode = LocationMode.AUTO,
+                        timezoneId = tzId
                     )
                     pushCurrentSnapshotToCloudIfSignedIn()
                     onResult(true)
@@ -308,7 +311,8 @@ class MainViewModel(
                         country = it.country ?: "",
                         region = it.admin1,
                         latitude = it.latitude,
-                        longitude = it.longitude
+                        longitude = it.longitude,
+                        timezoneId = it.timezone
                     )
                 }
                 if (mapped.isNotEmpty()) {
@@ -341,11 +345,13 @@ class MainViewModel(
     fun selectManualCity(city: CityOption) {
         viewModelScope.launch {
             locationErrorFlow.value = null
+            val tzId = city.timezoneId ?: resolveTimezoneForCoords(city.latitude, city.longitude)
             prefs.saveLocation(
                 latitude = city.latitude,
                 longitude = city.longitude,
                 name = city.displayTitle,
-                mode = LocationMode.MANUAL
+                mode = LocationMode.MANUAL,
+                timezoneId = tzId
             )
             pushCurrentSnapshotToCloudIfSignedIn()
         }
@@ -357,13 +363,28 @@ class MainViewModel(
             val cleanName = label.trim().ifEmpty {
                 String.format(Locale.US, "%.4f°, %.4f°", lat, lon)
             }
+            val tzId = resolveTimezoneForCoords(lat, lon)
             prefs.saveLocation(
                 latitude = lat,
                 longitude = lon,
                 name = cleanName,
-                mode = LocationMode.MANUAL
+                mode = LocationMode.MANUAL,
+                timezoneId = tzId
             )
             pushCurrentSnapshotToCloudIfSignedIn()
+        }
+    }
+
+    private suspend fun resolveTimezoneForCoords(latitude: Double, longitude: Double): String? {
+        CuratedCities.findTimezoneForCoordinates(latitude, longitude)?.let { return it }
+        return try {
+            container.timezoneApiService.getTimezoneForCoordinates(latitude, longitude)
+                .timezone
+                ?.takeIf { it.isNotBlank() }
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (_: Exception) {
+            null
         }
     }
 

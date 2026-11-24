@@ -77,4 +77,28 @@ class TwilightSchedulerUnitTest {
         assertNotNull(res.civilTwilightBegin)
         assertNotNull(res.sunrise)
     }
+
+    @Test
+    fun moscowTwilightFormatsInLocationTimezoneEvenWhenDeviceIsPst() {
+        val originalDefault = TimeZone.getDefault()
+        try {
+            // Simulate Android Emulator running in America/Los_Angeles (-08:00)
+            TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
+            // 02:59 UTC is 05:59 MSK (Europe/Moscow), NOT 18:59 PST!
+            val utcIso = "2026-11-23T02:59:00+00:00"
+            val parsed = parseIsoForTest(utcIso)!!
+            val moscowTz = TimeZone.getTimeZone("Europe/Moscow")
+
+            val cal = Calendar.getInstance(moscowTz).apply { time = parsed }
+            assertEquals(5, cal.get(Calendar.HOUR_OF_DAY))
+            assertEquals(59, cal.get(Calendar.MINUTE))
+
+            val formatted = SimpleDateFormat("HH:mm", Locale.US).apply {
+                timeZone = moscowTz
+            }.format(parsed)
+            assertEquals("05:59", formatted)
+        } finally {
+            TimeZone.setDefault(originalDefault)
+        }
+    }
 }
