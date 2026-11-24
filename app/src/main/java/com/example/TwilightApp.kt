@@ -4,12 +4,14 @@ import android.app.Application
 import android.content.Context
 import com.example.data.local.AppDatabase
 import com.example.data.local.UserPreferencesRepository
+import com.example.data.remote.FirestoreSyncRepository
 import com.example.data.remote.GeocodingApiService
 import com.example.data.remote.TwilightApiService
 import com.example.domain.TwilightCheckEngine
 import com.example.scheduler.MidnightScheduler
 import com.example.system.LocationHelper
 import com.example.system.NotificationHelper
+import com.google.firebase.firestore.FirebaseFirestore
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.CoroutineScope
@@ -22,12 +24,17 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 import java.util.concurrent.TimeUnit
 
 class AppContainer(context: Context) {
-    private val appContext = context.applicationContext
+    val appContext: Context = context.applicationContext
 
     val preferencesRepository = UserPreferencesRepository(appContext)
     val database = AppDatabase.getInstance(appContext)
     val checkDao = database.twilightCheckDao()
     val locationHelper = LocationHelper(appContext)
+
+    val firestoreDb: FirebaseFirestore = FirebaseFirestore.getInstance(
+        appContext.getString(R.string.firestore_database_id)
+    )
+    val firestoreSyncRepository = FirestoreSyncRepository(firestoreDb)
 
     private val moshi: Moshi = Moshi.Builder()
         .addLast(KotlinJsonAdapterFactory())
@@ -58,7 +65,8 @@ class AppContainer(context: Context) {
         preferencesRepository = preferencesRepository,
         checkDao = checkDao,
         twilightApi = twilightApiService,
-        locationHelper = locationHelper
+        locationHelper = locationHelper,
+        firestoreSyncRepository = firestoreSyncRepository
     )
 }
 

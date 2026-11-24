@@ -1,0 +1,202 @@
+{
+  "entities": {
+    "UserSettings": {
+      "title": "UserSettings",
+      "description": "User profile and cloud-synced Twilight Alarm preferences.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID of the owner."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name shown in account section."
+        },
+        "onboardingCompleted": {
+          "type": "boolean",
+          "description": "Whether initial setup wizard is completed."
+        },
+        "dailyMidnightEnabled": {
+          "type": "boolean",
+          "description": "Whether daily 00:00 twilight check is enabled."
+        },
+        "maxRetryAttempts": {
+          "type": "integer",
+          "description": "Maximum twilight API retry attempts (1 to 30)."
+        },
+        "retryDelaySeconds": {
+          "type": "integer",
+          "description": "Delay between retry attempts in seconds (1 to 30)."
+        },
+        "twilightPreference": {
+          "type": "string",
+          "enum": ["EARLIEST_AUTO", "ASTRONOMICAL", "NAUTICAL", "CIVIL"],
+          "description": "Selected twilight stage mode."
+        },
+        "alarmOffsetMinutes": {
+          "type": "integer",
+          "description": "Offset in minutes relative to twilight (-30 to 30)."
+        },
+        "alarmLabel": {
+          "type": "string",
+          "description": "Label passed to the system Clock alarm."
+        },
+        "locationMode": {
+          "type": "string",
+          "enum": ["AUTO", "MANUAL"],
+          "description": "Location resolution mode."
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Optional saved latitude."
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Optional saved longitude."
+        },
+        "locationName": {
+          "type": "string",
+          "description": "Human-readable city or coordinate label."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when settings document was created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when settings document was last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "onboardingCompleted",
+        "dailyMidnightEnabled",
+        "maxRetryAttempts",
+        "retryDelaySeconds",
+        "twilightPreference",
+        "alarmOffsetMinutes",
+        "alarmLabel",
+        "locationMode",
+        "locationName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TwilightCheckLog": {
+      "title": "TwilightCheckLog",
+      "description": "Log entry for a daily 00:00 or manual twilight check.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase UID."
+        },
+        "dateLabel": {
+          "type": "string",
+          "description": "Formatted date string (dd.MM.yyyy)."
+        },
+        "locationName": {
+          "type": "string",
+          "description": "Location name used for the check."
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Optional latitude."
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Optional longitude."
+        },
+        "attemptsUsed": {
+          "type": "integer",
+          "description": "Number of API attempts executed."
+        },
+        "maxAttempts": {
+          "type": "integer",
+          "description": "Configured retry limit."
+        },
+        "succeeded": {
+          "type": "boolean",
+          "description": "Whether earliest twilight was found."
+        },
+        "alarmSet": {
+          "type": "boolean",
+          "description": "Whether Clock alarm intent was dispatched."
+        },
+        "scheduledMidnight": {
+          "type": "boolean",
+          "description": "Whether check ran via 00:00 schedule."
+        },
+        "twilightTime": {
+          "type": "string",
+          "description": "Optional formatted HH:mm twilight time."
+        },
+        "twilightStage": {
+          "type": "string",
+          "description": "Optional twilight stage name."
+        },
+        "astronomicalTime": {
+          "type": "string",
+          "description": "Optional astronomical twilight HH:mm."
+        },
+        "nauticalTime": {
+          "type": "string",
+          "description": "Optional nautical twilight HH:mm."
+        },
+        "civilTime": {
+          "type": "string",
+          "description": "Optional civil twilight HH:mm."
+        },
+        "sunriseTime": {
+          "type": "string",
+          "description": "Optional sunrise HH:mm."
+        },
+        "message": {
+          "type": "string",
+          "description": "Summary status message."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "dateLabel",
+        "locationName",
+        "attemptsUsed",
+        "maxAttempts",
+        "succeeded",
+        "alarmSet",
+        "scheduledMidnight",
+        "message",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserSettings"
+      },
+      "description": "User profile and synced twilight alarm configuration."
+    },
+    "/users/{userId}/twilightChecks/{checkId}": {
+      "schema": {
+        "$ref": "#/entities/TwilightCheckLog"
+      },
+      "description": "Per-user subcollection of daily 00:00 and manual twilight check logs."
+    }
+  }
+}

@@ -32,27 +32,42 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.credentials.CredentialManager
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.ui.MainUiState
 import com.example.ui.MainViewModel
+import com.example.ui.auth.attemptAutoSignIn
+import com.example.ui.auth.authStateFlow
+import com.example.ui.auth.signOutFromGoogle
 import com.example.ui.components.LocationPickerSheet
+import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.OnboardingWizardScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.TwilightAlarmTheme
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 
 private enum class MainTab(
     val label: String,
@@ -71,18 +86,81 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             TwilightAlarmTheme {
-                val viewModel: MainViewModel = viewModel()
-                val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-                LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-                    viewModel.refreshPermissions()
-                }
-
-                TwilightRootContent(
-                    uiState = uiState,
-                    viewModel = viewModel
-                )
+                AppContent()
             }
+        }
+    }
+}
+
+@Composable
+private fun AppContent() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val credentialManager = remember(context) { CredentialManager.create(context) }
+
+    val auth = remember { Firebase.auth }
+    val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+    var checkingAutoSignIn by remember { mutableStateOf(auth.currentUser == null) }
+
+    LaunchedEffect(Unit) {
+        if (auth.currentUser == null) {
+            attemptAutoSignIn(
+                context = context,
+                credentialManager = credentialManager,
+                onAuthSuccess = { checkingAutoSignIn = false },
+                onUnauthenticated = { checkingAutoSignIn = false },
+                scope = scope
+            )
+        } else {
+            checkingAutoSignIn = false
+        }
+    }
+
+    val user = currentUser
+    if (checkingAutoSignIn && user == null) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            CircularProgressIndicator()
+        }
+    } else if (user == null) {
+        AuthScreen(
+            onAuthSuccess = { checkingAutoSignIn = false }
+        )
+    } else {
+        val uid = user.uid
+        val displayName = user.displayName ?: user.email ?: "Пользователь Google"
+        key(uid) {
+            val viewModel: MainViewModel = viewModel(
+                key = uid,
+                factory = viewModelFactory {
+                    initializer {
+                        val app = checkNotNull(this[APPLICATION_KEY]) as TwilightApp
+                        MainViewModel(
+                            container = app.container,
+                            currentUserId = uid,
+                            currentUserName = displayName
+                        )
+                    }
+                }
+            )
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+            LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshPermissions()
+            }
+
+            TwilightRootContent(
+                uiState = uiState,
+                viewModel = viewModel,
+                onSignOut = {
+                    signOutFromGoogle(
+                        credentialManager = credentialManager,
+                        scope = scope
+                    )
+                }
+            )
         }
     }
 }
@@ -90,7 +168,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun TwilightRootContent(
     uiState: MainUiState,
-    viewModel: MainViewModel
+    viewModel: MainViewModel,
+    onSignOut: () -> Unit
 ) {
     if (uiState.isLoading) {
         Box(
@@ -210,7 +289,9 @@ private fun TwilightRootContent(
                             onSetAlarmLabel = viewModel::updateAlarmLabel,
                             onSetLocationMode = viewModel::setLocationMode,
                             onOpenLocationPicker = { showLocationSheet = true },
-                            onReopenOnboarding = viewModel::reopenOnboarding
+                            onReopenOnboarding = viewModel::reopenOnboarding,
+                            onSyncNow = viewModel::syncNowToCloud,
+                            onSignOut = onSignOut
                         )
                     }
                 }

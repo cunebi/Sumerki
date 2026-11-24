@@ -7,11 +7,14 @@ import com.example.data.local.UserPreferencesRepository
 import com.example.data.model.LocationMode
 import com.example.data.model.TwilightPreference
 import com.example.data.model.TwilightTimes
+import com.example.data.remote.FirestoreSyncRepository
 import com.example.data.remote.SunriseSunsetResults
 import com.example.data.remote.TwilightApiService
 import com.example.system.ClockAlarmHelper
 import com.example.system.LocationHelper
 import com.example.system.NotificationHelper
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -41,8 +44,17 @@ class TwilightCheckEngine(
     private val preferencesRepository: UserPreferencesRepository,
     private val checkDao: TwilightCheckDao,
     private val twilightApi: TwilightApiService,
-    private val locationHelper: LocationHelper
+    private val locationHelper: LocationHelper,
+    private val firestoreSyncRepository: FirestoreSyncRepository? = null
 ) {
+
+    private suspend fun persistCheck(entity: TwilightCheckEntity) {
+        checkDao.insertCheck(entity)
+        val uid = Firebase.auth.currentUser?.uid
+        if (!uid.isNullOrBlank()) {
+            firestoreSyncRepository?.addCheckLog(uid, entity)
+        }
+    }
 
     suspend fun executeTwilightCheck(
         isScheduledMidnight: Boolean,
@@ -80,7 +92,7 @@ class TwilightCheckEngine(
             } else {
                 "Местоположение не задано. Выберите город вручную."
             }
-            checkDao.insertCheck(
+            persistCheck(
                 TwilightCheckEntity(
                     timestampMillis = System.currentTimeMillis(),
                     dateLabel = todayDisplay,
@@ -145,7 +157,7 @@ class TwilightCheckEngine(
                             append(clockResult.message)
                         }
 
-                        checkDao.insertCheck(
+                        persistCheck(
                             TwilightCheckEntity(
                                 timestampMillis = System.currentTimeMillis(),
                                 dateLabel = todayDisplay,
@@ -211,7 +223,7 @@ class TwilightCheckEngine(
 
         // Step 3: All attempts exhausted — DO NOT set alarm
         val failMessage = "После $maxAttempts из $maxAttempts попыток ответ не получен ($lastError). Будильник не поставлен."
-        checkDao.insertCheck(
+        persistCheck(
             TwilightCheckEntity(
                 timestampMillis = System.currentTimeMillis(),
                 dateLabel = todayDisplay,

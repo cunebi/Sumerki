@@ -1,0 +1,133 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidUserSettings(data, userId) {
+      return data.userId == userId &&
+        data.displayName is string && data.displayName.size() <= 100 &&
+        data.onboardingCompleted is bool &&
+        data.dailyMidnightEnabled is bool &&
+        data.maxRetryAttempts is int && data.maxRetryAttempts >= 1 && data.maxRetryAttempts <= 30 &&
+        data.retryDelaySeconds is int && data.retryDelaySeconds >= 1 && data.retryDelaySeconds <= 30 &&
+        data.twilightPreference in ['EARLIEST_AUTO', 'ASTRONOMICAL', 'NAUTICAL', 'CIVIL'] &&
+        data.alarmOffsetMinutes is int && data.alarmOffsetMinutes >= -30 && data.alarmOffsetMinutes <= 30 &&
+        data.alarmLabel is string && data.alarmLabel.size() >= 1 && data.alarmLabel.size() <= 100 &&
+        data.locationMode in ['AUTO', 'MANUAL'] &&
+        (!('latitude' in data) || (data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0)) &&
+        (!('longitude' in data) || (data.longitude is number && data.longitude >= -180.0 && data.longitude <= 180.0)) &&
+        data.locationName is string && data.locationName.size() <= 200;
+    }
+
+    function isValidTwilightCheckLog(data, userId) {
+      return data.userId == userId &&
+        data.dateLabel is string && data.dateLabel.size() >= 1 && data.dateLabel.size() <= 32 &&
+        data.locationName is string && data.locationName.size() <= 200 &&
+        (!('latitude' in data) || (data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0)) &&
+        (!('longitude' in data) || (data.longitude is number && data.longitude >= -180.0 && data.longitude <= 180.0)) &&
+        data.attemptsUsed is int && data.attemptsUsed >= 0 && data.attemptsUsed <= 30 &&
+        data.maxAttempts is int && data.maxAttempts >= 1 && data.maxAttempts <= 30 &&
+        data.succeeded is bool &&
+        data.alarmSet is bool &&
+        data.scheduledMidnight is bool &&
+        (!('twilightTime' in data) || (data.twilightTime is string && data.twilightTime.size() <= 16)) &&
+        (!('twilightStage' in data) || (data.twilightStage is string && data.twilightStage.size() <= 64)) &&
+        (!('astronomicalTime' in data) || (data.astronomicalTime is string && data.astronomicalTime.size() <= 16)) &&
+        (!('nauticalTime' in data) || (data.nauticalTime is string && data.nauticalTime.size() <= 16)) &&
+        (!('civilTime' in data) || (data.civilTime is string && data.civilTime.size() <= 16)) &&
+        (!('sunriseTime' in data) || (data.sunriseTime is string && data.sunriseTime.size() <= 16)) &&
+        data.message is string && data.message.size() <= 500;
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+        isValidId(userId) &&
+        incoming().keys().hasAll([
+          'userId', 'displayName', 'onboardingCompleted', 'dailyMidnightEnabled',
+          'maxRetryAttempts', 'retryDelaySeconds', 'twilightPreference',
+          'alarmOffsetMinutes', 'alarmLabel', 'locationMode', 'locationName',
+          'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'userId', 'displayName', 'onboardingCompleted', 'dailyMidnightEnabled',
+          'maxRetryAttempts', 'retryDelaySeconds', 'twilightPreference',
+          'alarmOffsetMinutes', 'alarmLabel', 'locationMode', 'latitude',
+          'longitude', 'locationName', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+        isValidUserSettings(incoming(), userId);
+
+      allow update: if isOwner(userId) &&
+        isValidId(userId) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+        isValidUserSettings(incoming(), userId) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'onboardingCompleted', 'dailyMidnightEnabled',
+          'maxRetryAttempts', 'retryDelaySeconds', 'twilightPreference',
+          'alarmOffsetMinutes', 'alarmLabel', 'locationMode', 'latitude',
+          'longitude', 'locationName', 'updatedAt'
+        ]);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /twilightChecks/{checkId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(checkId);
+        allow list: if isOwner(userId) && isValidId(userId);
+
+        allow create: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(checkId) &&
+          incoming().keys().hasAll([
+            'userId', 'dateLabel', 'locationName', 'attemptsUsed', 'maxAttempts',
+            'succeeded', 'alarmSet', 'scheduledMidnight', 'message',
+            'createdAt', 'updatedAt'
+          ]) &&
+          incoming().keys().hasOnly([
+            'userId', 'dateLabel', 'locationName', 'latitude', 'longitude',
+            'attemptsUsed', 'maxAttempts', 'succeeded', 'alarmSet',
+            'scheduledMidnight', 'twilightTime', 'twilightStage',
+            'astronomicalTime', 'nauticalTime', 'civilTime', 'sunriseTime',
+            'message', 'createdAt', 'updatedAt'
+          ]) &&
+          incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+          incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+          isValidTwilightCheckLog(incoming(), userId);
+
+        allow update: if false;
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(checkId);
+      }
+    }
+  }
+}

@@ -70,6 +70,8 @@ fun SettingsScreen(
     onSetLocationMode: (LocationMode) -> Unit,
     onOpenLocationPicker: () -> Unit,
     onReopenOnboarding: () -> Unit,
+    onSyncNow: () -> Unit,
+    onSignOut: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -105,6 +107,49 @@ fun SettingsScreen(
                 text = "Настройки",
                 style = MaterialTheme.typography.headlineSmall
             )
+
+            // 0. Firebase Account & Sync
+            SettingsSectionCard(title = "Аккаунт и облако Firebase") {
+                Text(
+                    text = uiState.currentUserName.ifBlank { "Пользователь Google" },
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = when {
+                        uiState.cloudSyncError != null -> "Ошибка синхронизации: ${uiState.cloudSyncError}"
+                        uiState.cloudSynced -> "Настройки и журнал синхронизированы с Cloud Firestore"
+                        else -> "Подключение к Cloud Firestore…"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (uiState.cloudSyncError != null) {
+                        MaterialTheme.colorScheme.tertiary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onSyncNow,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("settings_cloud_sync_btn")
+                    ) {
+                        Text("Синхронизировать")
+                    }
+                    OutlinedButton(
+                        onClick = onSignOut,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("settings_sign_out_btn")
+                    ) {
+                        Text("Выйти")
+                    }
+                }
+            }
 
             // 1. Daily 00:00 Schedule
             SettingsSectionCard(title = "Ночная проверка в 00:00") {
